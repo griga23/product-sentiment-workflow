@@ -51,7 +51,7 @@ It will print the final sentiment score for the configured Steam app id.
 
 ## Configuration
 
-Edit `run_workflow.py` to change the Steam app id. The id is the number in the Steam store URL — for example:
+Edit `run_workflow.py` to change the Steam app id. Game examples:
 
 - `620` — Portal 2
 - `570` — Dota 2
@@ -94,3 +94,44 @@ The workflow runs three activities:
 3. **`aggregate_scores(scores)`** — returns the mean of the per-review scores.
 
 Result is in `[-1, +1]`: positive values mean mostly-positive reviews, negative values mean mostly-negative.
+
+## Architecture
+
+```mermaid
+flowchart TB
+    Client[run_workflow.py<br/>client]
+    Server[(Temporal Server<br/>localhost:7233)]
+
+    subgraph WorkerProc["worker.py (process)"]
+        Worker["Worker<br/>task_queue: review-task-queue<br/>ThreadPoolExecutor(max_workers=10)"]
+
+        subgraph WF["ReviewSentimentWorkflow (workflow.py)"]
+            direction TB
+            Run["run(app_id) → float<br/>RetryPolicy: 3 attempts, 2s initial"]
+            S1["1. scrape_reviews<br/>timeout 30s"]
+            S2["2. analyze_sentiment × N<br/>fan-out batches of 10<br/>timeout 60s"]
+            S3["3. aggregate_scores<br/>timeout 10s"]
+            Run --> S1 --> S2 --> S3
+        end
+
+        subgraph ACT["activities.py (@activity.defn)"]
+            direction TB
+            A1["scrape_reviews(app_id)<br/>GET store.steampowered.com/appreviews"]
+            A2["analyze_sentiment(texts)<br/>HF distilbert SST-2 pipeline<br/>(loaded once at import)"]
+            A3["aggregate_scores(scores)<br/>numpy.mean"]
+        end
+
+        Worker -->|hosts| WF
+        Worker -->|hosts| ACT
+    end
+
+    Client -->|start ReviewSentimentWorkflow<br/>app_id| Server
+    Server <-->|poll task queue| Worker
+    S1 -.dispatch.-> A1
+    S2 -.dispatch.-> A2
+    S3 -.dispatch.-> A3
+
+    A1 -->|HTTPS| Steam[(Steam Reviews API)]
+```
+
+`run_workflow.py` submits a workflow execution to the Temporal server, which queues tasks on `review-task-queue`. The `worker.py` process polls that queue and hosts both the `ReviewSentimentWorkflow` orchestration and the three `@activity.defn` functions in `activities.py`. The workflow drives the sequence — scrape, fan-out sentiment analysis, aggregate — while the worker dispatches each activity invocation to its `ThreadPoolExecutor` (sync activities require a thread pool).
