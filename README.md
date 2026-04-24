@@ -1,6 +1,6 @@
 # Product Sentiment Analysis
 
-A Temporal-based Python pipeline that pulls product reviews from Steam, runs sentiment analysis on each review with a HuggingFace model, and returns an averaged score for the product.
+A Temporal-based Python pipeline that pulls game reviews from Steam, runs sentiment analysis on each review with a HuggingFace model, and returns an averaged score for the product.
 
 ## Prerequisites
 
