@@ -2,7 +2,6 @@
 
 import asyncio
 from temporalio.client import Client
-from workflow import ReviewSentimentWorkflow
 
 
 async def main():
@@ -11,7 +10,7 @@ async def main():
     app_id = "728880"  # Overcooked 2 game,my kids love it
 
     result = await client.execute_workflow(
-        ReviewSentimentWorkflow.run,
+        "ReviewSentimentWorkflow",
         app_id,
         id=f"game-review-workflow-{app_id}",
         task_queue="review-task-queue",
